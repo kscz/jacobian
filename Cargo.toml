@@ -1,0 +1,12 @@
+[package]
+name = "jacobian"
+version = "0.1.0"
+authors = ["Kit Sczudlo <kitscuzz@scuzzstuff.com>"]
+
+[dependencies]
+serde = "0.8.19"
+serde_derive = "0.8.19"
+serde_json = "0.8.4"
+hyper = "0.9.13"
+openssl = "0.7.14"
+
