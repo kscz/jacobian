@@ -3,7 +3,7 @@ extern crate serde_json;
 
 use hyper::client::Client;
 use hyper::header::{Headers, Authorization, Bearer};
-use std::io::Read;
+use std::io::{Read, Error};
 
 #[derive(Deserialize, Debug, Default)]
 pub struct VersionResponse {
@@ -40,7 +40,6 @@ pub struct LoginResponse {
 }
 
 pub struct MatrixClient {
-#[macro_use]
     access_token: Option<String>,
     refresh_token: Option<String>,
     local_device_id: Option<String>,
@@ -48,6 +47,15 @@ pub struct MatrixClient {
     user_id: Option<String>,
     http_client: hyper::client::Client,
     homeserver: String
+}
+
+#[derive(Debug)]
+pub enum MatrixClientError {
+    Http(hyper::error::Error),
+    Io(::std::io::Error),
+    Json(serde_json::error::Error),
+    Authorization(&'static str),
+    BadStatus(String)
 }
 
 const VERSION_URL: &'static str = "/_matrix/client/versions";
@@ -69,10 +77,10 @@ impl MatrixClient {
         }
     }
 
-    fn get_authorization_headers(&self) -> Result<Headers, String> {
+    fn get_authorization_headers(&self) -> Result<Headers, MatrixClientError> {
         let access_token = match self.access_token {
             Some(ref x) => x.clone(),
-            None => { return Err(String::from("Not logged in!")); }
+            None => { return Err(MatrixClientError::Authorization("Not logged in!")); }
         };
 
         let mut headers = Headers::new();
@@ -87,40 +95,26 @@ impl MatrixClient {
         Ok(headers)
     }
 
-    pub fn get_supported_versions(&self) -> Result<VersionResponse, String> {
+    pub fn get_supported_versions(&self) -> Result<VersionResponse, MatrixClientError> {
         let mut request_url = String::with_capacity(self.homeserver.len() + VERSION_URL.len());
         request_url.push_str(self.homeserver.as_str());
         request_url.push_str(VERSION_URL);
 
-        let mut response = match self.http_client.get(request_url.as_str()).send() {
-            Ok(resp) => resp,
-            Err(e) => { return Err(format!("Get request failed: {}", e)); }
-        };
+        let mut response = self.http_client.get(request_url.as_str()).send().map_err(MatrixClientError::Http)?;;
 
         let mut body = String::new();
-        match response.read_to_string(&mut body) {
-            Ok(_) => (),
-            Err(e) => { return Err(format!("Unable to read response body to string: {}", e)); }
-        };
+        response.read_to_string(&mut body).map_err(MatrixClientError::Io)?;
 
-        match response.status {
-            hyper::Ok => (),
-            _ => {
-                return Err(format!("Got error response from the server: {}; Contents: {}", response.status, body));
-            }
-        };
+        if hyper::Ok != response.status {
+            return Err(MatrixClientError::BadStatus(format!("Got error response from the server: {}; Contents: {}", response.status, body)));
+        }
 
-        let version_repsonse: VersionResponse = match serde_json::from_str(&body) {
-            Ok(x) => x,
-            Err(e) => {
-                return Err(format!("Unable to deserialize version request. Got error {}; body: {}", e, body));
-            }
-        };
+        let version_repsonse: VersionResponse = serde_json::from_str(&body).map_err(MatrixClientError::Json)?;
 
         Ok(version_repsonse)
     }
 
-    pub fn login(&mut self, user: &str, password: &str) -> Result<LoginResponse, String> {
+    pub fn login(&mut self, user: &str, password: &str) -> Result<LoginResponse, MatrixClientError> {
         let mut request_url = String::with_capacity(self.homeserver.len() + LOGIN_URL.len());
         request_url.push_str(self.homeserver.as_str());
         request_url.push_str(LOGIN_URL);
@@ -134,33 +128,18 @@ impl MatrixClient {
             device_id: self.local_device_id.clone()
         };
 
-        let json = match serde_json::to_string(&login_request) {
-            Ok(x) => x,
-            Err(e) => { return Err(format!("Couldn't serialize login request: {}", e)); }
-        };
+        let json = serde_json::to_string(&login_request).map_err(MatrixClientError::Json)?;
 
-        let mut response = match self.http_client.post(request_url.as_str()).body(&json).send() {
-            Ok(x) => x,
-            Err(e) => { return Err(format!("Request generation failed: {}", e)); }
-        };
+        let mut response = self.http_client.post(request_url.as_str()).body(&json).send().map_err(MatrixClientError::Http)?;
 
         let mut body = String::new();
-        match response.read_to_string(&mut body) {
-            Ok(_) => (),
-            Err(e) => { return Err(format!("Unable to read response body to string: {}", e)); }
-        };
+        response.read_to_string(&mut body).map_err(MatrixClientError::Io)?;
 
-        match response.status {
-            hyper::Ok => (),
-            _ => {
-                return Err(format!("Got error response from the server: {}; Contents: {}", response.status, body));
-            }
-        };
+        if hyper::Ok != response.status {
+            return Err(MatrixClientError::BadStatus(format!("Got error response from the server: {}; Contents: {}", response.status, body)));
+        }
 
-        let login_response: LoginResponse = match serde_json::from_str(&body) {
-            Ok(x) => x,
-            Err(e) => { return Err(format!("Couldn't deserialize login response {}", e)); }
-        };
+        let login_response: LoginResponse = serde_json::from_str(&body).map_err(MatrixClientError::Json)?;
 
         self.access_token = Some(login_response.access_token.clone());
         self.refresh_token = login_response.refresh_token.clone();
@@ -170,30 +149,21 @@ impl MatrixClient {
         Ok(login_response)
     }
 
-    pub fn logout(&mut self) -> Result<(), String> {
+    pub fn logout(&mut self) -> Result<(), MatrixClientError> {
         let mut request_url = String::with_capacity(self.homeserver.len() + LOGOUT_URL.len());
         request_url.push_str(self.homeserver.as_str());
         request_url.push_str(LOGOUT_URL);
 
         let headers = self.get_authorization_headers()?;
 
-        let mut response = match self.http_client.post(request_url.as_str()).headers(headers).send() {
-            Ok(x) => x,
-            Err(e) => { return Err(format!("Request generation failed: {}", e)); }
-        };
+        let mut response = self.http_client.post(request_url.as_str()).headers(headers).send().map_err(MatrixClientError::Http)?;
 
         let mut body = String::new();
-        match response.read_to_string(&mut body) {
-            Ok(_) => (),
-            Err(e) => { return Err(format!("Unable to read response body to string: {}", e)); }
-        };
+        response.read_to_string(&mut body).map_err(MatrixClientError::Io)?;
 
-        match response.status {
-            hyper::Ok => (),
-            _ => {
-                return Err(format!("Got error response from the server: {}; Contents: {}", response.status, body));
-            }
-        };
+        if hyper::Ok != response.status {
+            return Err(MatrixClientError::BadStatus(format!("Got error response from the server: {}; Contents: {}", response.status, body)));
+        }
 
         self.access_token = None;
         self.refresh_token = None;
@@ -202,30 +172,21 @@ impl MatrixClient {
         Ok(())
     }
 
-    pub fn logout_all(&mut self) -> Result<(), String> {
+    pub fn logout_all(&mut self) -> Result<(), MatrixClientError> {
         let mut request_url = String::with_capacity(self.homeserver.len() + LOGOUT_ALL_URL.len());
         request_url.push_str(self.homeserver.as_str());
         request_url.push_str(LOGOUT_ALL_URL);
 
         let headers = self.get_authorization_headers()?;
 
-        let mut response = match self.http_client.post(request_url.as_str()).headers(headers).send() {
-            Ok(x) => x,
-            Err(e) => { return Err(format!("Request generation failed: {}", e)); }
-        };
+        let mut response = self.http_client.post(request_url.as_str()).headers(headers).send().map_err(MatrixClientError::Http)?;
 
         let mut body = String::new();
-        match response.read_to_string(&mut body) {
-            Ok(_) => (),
-            Err(e) => { return Err(format!("Unable to read response body to string: {}", e)); }
-        };
+        response.read_to_string(&mut body).map_err(MatrixClientError::Io)?;
 
-        match response.status {
-            hyper::Ok => (),
-            _ => {
-                return Err(format!("Got error response from the server: {}; Contents: {}", response.status, body));
-            }
-        };
+        if hyper::Ok != response.status {
+            return Err(MatrixClientError::BadStatus(format!("Got error response from the server: {}; Contents: {}", response.status, body)));
+        }
 
         self.access_token = None;
         self.refresh_token = None;
