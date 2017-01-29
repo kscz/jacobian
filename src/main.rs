@@ -35,7 +35,39 @@ fn main() {
         }
     };
 
-    println!("Logged in! Got: {:?}", login);
+    println!("Logged in! Got: {:#?}", login);
+
+    let pub_rooms = match client.list_public_rooms() {
+        Ok(x) => x,
+        Err(e) => {
+            println!("Failed to get publicly visible rooms!");
+            println!("{:?}", e);
+            return;
+        }
+    };
+
+    println!("Publicly visible rooms:");
+    println!("{:#?}", pub_rooms);
+
+    for chunk in pub_rooms.chunk.iter() {
+        if chunk.name == "Room I Want to Join" {
+            println!("Found room! Attempting to join...");
+            match client.join_room(&chunk.room_id) {
+                Ok(x) => {
+                    println!("Joined room with room_id: {:#?}", x);
+                },
+                Err(e) => {
+                    println!("Unable to join room with error: {:#?}", e);
+                }
+            };
+        }
+    }
+
+    println!("Attempting a sync!");
+    match client.sync(None, None, Some(false), 30000) {
+        Ok(_) => (),
+        Err(e) => println!("{:#?}", e)
+    };
 
     println!("Attempting to log back out...");
     match client.logout() {
