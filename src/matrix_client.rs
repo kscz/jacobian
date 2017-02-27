@@ -1,8 +1,8 @@
-extern crate hyper;
 extern crate serde_json;
+extern crate reqwest;
 
-use hyper::client::{Client};
-use hyper::header::{Headers, Authorization, Bearer};
+use reqwest::{Client, UrlError};
+use reqwest::header::{Headers, Authorization, Bearer};
 use std::io::{Read, Error};
 
 #[derive(Deserialize, Debug, Default)]
@@ -47,7 +47,7 @@ pub struct PublicRoomsChunk {
     pub avatar_url: String,
     pub room_id: String,
     pub guest_can_join: bool,
-    pub aliases: Vec<String>,
+    pub aliases: Option<Vec<String>>,
     pub name: String
 }
 
@@ -166,14 +166,14 @@ pub struct MatrixClient {
     local_device_id: Option<String>,
     server_device_id: Option<String>,
     user_id: Option<String>,
-    http_client: hyper::client::Client,
+    http_client: reqwest::Client,
     homeserver: String
 }
 
 #[derive(Debug)]
 pub enum MatrixClientError {
-    ParseError(hyper::error::ParseError),
-    Http(hyper::error::Error),
+    UrlError(reqwest::UrlError),
+    Http(reqwest::Error),
     Io(::std::io::Error),
     Json(serde_json::error::Error),
     NotLoggedIn,
@@ -197,7 +197,7 @@ impl MatrixClient {
             local_device_id: device_id,
             server_device_id: None,
             user_id: None,
-            http_client: hyper::client::Client::new(),
+            http_client: reqwest::Client::new().unwrap(),
             homeserver: homeserver
         }
     }
@@ -230,8 +230,8 @@ impl MatrixClient {
         let mut body = String::new();
         response.read_to_string(&mut body).map_err(MatrixClientError::Io)?;
 
-        if hyper::Ok != response.status {
-            return Err(MatrixClientError::BadStatus(format!("Got error response from the server: {}; Contents: {}", response.status, body)));
+        if reqwest::StatusCode::Ok != *response.status() {
+            return Err(MatrixClientError::BadStatus(format!("Got error response from the server: {}; Contents: {}", response.status(), body)));
         }
 
         let version_repsonse: VersionResponse = serde_json::from_str(&body).map_err(MatrixClientError::Json)?;
@@ -255,13 +255,13 @@ impl MatrixClient {
 
         let json = serde_json::to_string(&login_request).map_err(MatrixClientError::Json)?;
 
-        let mut response = self.http_client.post(request_url.as_str()).body(&json).send().map_err(MatrixClientError::Http)?;
+        let mut response = self.http_client.post(request_url.as_str()).body(json).send().map_err(MatrixClientError::Http)?;
 
         let mut body = String::new();
         response.read_to_string(&mut body).map_err(MatrixClientError::Io)?;
 
-        if hyper::Ok != response.status {
-            return Err(MatrixClientError::BadStatus(format!("Got error response from the server: {}; Contents: {}", response.status, body)));
+        if reqwest::StatusCode::Ok != *response.status() {
+            return Err(MatrixClientError::BadStatus(format!("Got error response from the server: {}; Contents: {}", response.status(), body)));
         }
 
         let login_response: LoginResponse = serde_json::from_str(&body).map_err(MatrixClientError::Json)?;
@@ -286,8 +286,8 @@ impl MatrixClient {
         let mut body = String::new();
         response.read_to_string(&mut body).map_err(MatrixClientError::Io)?;
 
-        if hyper::Ok != response.status {
-            return Err(MatrixClientError::BadStatus(format!("Got error response from the server: {}; Contents: {}", response.status, body)));
+        if reqwest::StatusCode::Ok != *response.status() {
+            return Err(MatrixClientError::BadStatus(format!("Got error response from the server: {}; Contents: {}", response.status(), body)));
         }
 
         self.access_token = None;
@@ -309,8 +309,8 @@ impl MatrixClient {
         let mut body = String::new();
         response.read_to_string(&mut body).map_err(MatrixClientError::Io)?;
 
-        if hyper::Ok != response.status {
-            return Err(MatrixClientError::BadStatus(format!("Got error response from the server: {}; Contents: {}", response.status, body)));
+        if reqwest::StatusCode::Ok != *response.status() {
+            return Err(MatrixClientError::BadStatus(format!("Got error response from the server: {}; Contents: {}", response.status(), body)));
         }
 
         self.access_token = None;
@@ -332,8 +332,8 @@ impl MatrixClient {
         let mut body = String::new();
         response.read_to_string(&mut body).map_err(MatrixClientError::Io)?;
 
-        if hyper::Ok != response.status {
-            return Err(MatrixClientError::BadStatus(format!("Got error response from the server: {}; Contents: {}", response.status, body)));
+        if reqwest::StatusCode::Ok != *response.status() {
+            return Err(MatrixClientError::BadStatus(format!("Got error response from the server: {}; Contents: {}", response.status(), body)));
         }
 
         let pub_rooms_response: PublicRoomsResponse = serde_json::from_str(&body).map_err(MatrixClientError::Json)?;
@@ -358,8 +358,8 @@ impl MatrixClient {
         let mut body = String::new();
         response.read_to_string(&mut body).map_err(MatrixClientError::Io)?;
 
-        if hyper::Ok != response.status {
-            return Err(MatrixClientError::BadStatus(format!("Got error response from the server: {}; Contents: {}", response.status, body)));
+        if reqwest::StatusCode::Ok != *response.status() {
+            return Err(MatrixClientError::BadStatus(format!("Got error response from the server: {}; Contents: {}", response.status(), body)));
         }
 
         let join_response: JoinResponse = serde_json::from_str(&body).map_err(MatrixClientError::Json)?;
@@ -372,7 +372,7 @@ impl MatrixClient {
             let mut base_url = String::with_capacity(self.homeserver.len() + SYNC_URL.len());
             base_url.push_str(self.homeserver.as_str());
             base_url.push_str(SYNC_URL);
-            hyper::Url::parse(base_url.as_str()).map_err(MatrixClientError::ParseError)?
+            reqwest::Url::parse(base_url.as_str()).map_err(MatrixClientError::UrlError)?
         };
 
         match filter {
@@ -408,8 +408,8 @@ impl MatrixClient {
         let mut body = String::new();
         response.read_to_string(&mut body).map_err(MatrixClientError::Io)?;
 
-        if hyper::Ok != response.status {
-            return Err(MatrixClientError::BadStatus(format!("Got error response from the server: {}; Contents: {}", response.status, body)));
+        if reqwest::StatusCode::Ok != *response.status() {
+            return Err(MatrixClientError::BadStatus(format!("Got error response from the server: {}; Contents: {}", response.status(), body)));
         }
 
         let sync_response: Option<SyncResponse> = match serde_json::from_str(&body) {
