@@ -84,46 +84,46 @@ pub enum Event {
     Unknown,
 
     #[serde(rename = "m.typing")]
-    Typing(TypingEvent),
+    Typing(EventContainer<TypingEvent>),
 
     #[serde(rename = "m.room.power_levels")]
-    RoomPowerLevels(RoomPowerLevelsEvent),
+    RoomPowerLevels(EventContainer<RoomPowerLevelsEvent>),
 
     #[serde(rename = "m.room.history_visibility")]
-    RoomHistoryVisibility(RoomHistoryVisibilityEvent),
+    RoomHistoryVisibility(EventContainer<RoomHistoryVisibilityEvent>),
 
     #[serde(rename = "m.room.topic")]
-    RoomTopic(RoomTopicEvent),
+    RoomTopic(EventContainer<RoomTopicEvent>),
 
     #[serde(rename = "m.receipt")]
-    Receipt(ReceiptEvent),
+    Receipt(EventContainer<HashMap<String, ReceiptEvent>>),
 
     #[serde(rename = "m.presence")]
-    Presence(PresenceEvent),
+    Presence(EventContainer<PresenceEvent>),
 
     #[serde(rename = "m.room.member")]
-    RoomMember(RoomMemberEvent),
+    RoomMember(EventContainer<RoomMemberEvent>),
 
     #[serde(rename = "m.room.aliases")]
-    RoomAlias(RoomAliasEvent),
+    RoomAlias(EventContainer<RoomAliasEvent>),
 
     #[serde(rename = "m.room.canonical_alias")]
-    RoomCanonicalAlias(RoomCanonicalAliasEvent),
+    RoomCanonicalAlias(EventContainer<RoomCanonicalAliasEvent>),
 
     #[serde(rename = "m.room.create")]
-    RoomCreate(RoomCreateEvent),
+    RoomCreate(EventContainer<RoomCreateEvent>),
 
     #[serde(rename = "m.room.avatar")]
-    RoomAvatar(RoomAvatarEvent),
+    RoomAvatar(EventContainer<RoomAvatarEvent>),
 
     #[serde(rename = "m.room.join_rules")]
-    RoomJoinRules(RoomJoinRulesEvent),
+    RoomJoinRules(EventContainer<RoomJoinRulesEvent>),
 
     #[serde(rename = "m.room.message")]
-    RoomMessage(RoomMessageEvent),
+    RoomMessage(EventContainer<RoomMessageTypes>),
 
     #[serde(rename = "m.room.name")]
-    RoomName(RoomNameEvent),
+    RoomName(EventContainer<RoomNameEvent>),
 }
 
 impl Default for Event {
@@ -133,7 +133,23 @@ impl Default for Event {
 }
 
 #[derive(Deserialize, Debug, Default)]
+pub struct EventContainer<T> {
+    pub content: T,
+    pub origin_server_ts: Option<i64>,
+    pub sender: Option<String>,
+    pub unsigned: Option<Unsigned<T>>,
+    pub state_key: Option<String>
+}
+
+#[derive(Deserialize, Debug, Default)]
+pub struct Receipt {
+    pub ts: i64
+}
+
+#[derive(Deserialize, Debug, Default)]
 pub struct ReceiptEvent {
+    #[serde(rename = "m.read")]
+    pub read: HashMap<String, Receipt>
 }
 
 #[derive(Deserialize, Debug)]
@@ -170,15 +186,6 @@ impl Default for RoomMessageTypes {
     fn default() -> RoomMessageTypes {
         RoomMessageTypes::Unknown
     }
-}
-
-#[derive(Deserialize, Debug, Default)]
-pub struct RoomMessageEvent {
-    pub content: RoomMessageTypes,
-    pub origin_server_ts: Option<i64>,
-    pub sender: Option<String>,
-    pub unsigned: Option<Unsigned<RoomMessageTypes>>,
-    pub state_key: Option<String>
 }
 
 #[derive(Deserialize, Debug, Default)]
@@ -262,33 +269,15 @@ pub struct ImageMessageType {
 }
 
 #[derive(Deserialize, Debug, Default)]
-pub struct RoomJoinRulesEventContent {
+pub struct RoomJoinRulesEvent {
     pub join_rule: String
 }
 
 #[derive(Deserialize, Debug, Default)]
-pub struct RoomJoinRulesEvent {
-    pub content: RoomJoinRulesEventContent,
-    pub origin_server_ts: Option<i64>,
-    pub sender: Option<String>,
-    pub unsigned: Option<Unsigned<RoomJoinRulesEventContent>>,
-    pub state_key: Option<String>
-}
-
-#[derive(Deserialize, Debug, Default)]
-pub struct RoomCreateEventContent {
+pub struct RoomCreateEvent {
     pub creator: String,
     #[serde(rename = "m.federate")]
     pub federate: Option<bool>
-}
-
-#[derive(Deserialize, Debug, Default)]
-pub struct RoomCreateEvent {
-    pub content: RoomCreateEventContent,
-    pub origin_server_ts: Option<i64>,
-    pub sender: Option<String>,
-    pub unsigned: Option<Unsigned<RoomCreateEventContent>>,
-    pub state_key: Option<String>
 }
 
 #[derive(Deserialize, Debug, Default)]
@@ -300,7 +289,7 @@ pub struct ImageInfo {
 }
 
 #[derive(Deserialize, Debug, Default)]
-pub struct RoomAvatarEventContent {
+pub struct RoomAvatarEvent {
     pub url: String,
     pub info: Option<ImageInfo>,
     pub thumbnail_url: Option<String>,
@@ -308,86 +297,32 @@ pub struct RoomAvatarEventContent {
 }
 
 #[derive(Deserialize, Debug, Default)]
-pub struct RoomAvatarEvent {
-    pub content: RoomAvatarEventContent,
-    pub origin_server_ts: Option<i64>,
-    pub sender: Option<String>,
-    pub unsigned: Option<Unsigned<RoomAvatarEventContent>>,
-    pub state_key: Option<String>
-}
-
-#[derive(Deserialize, Debug, Default)]
-pub struct RoomAliasEventContent {
+pub struct RoomAliasEvent {
     pub aliases: Vec<String>
 }
 
 #[derive(Deserialize, Debug, Default)]
-pub struct RoomAliasEvent {
-    pub content: RoomAliasEventContent,
-    pub origin_server_ts: Option<i64>,
-    pub sender: Option<String>,
-    pub unsigned: Option<Unsigned<RoomAliasEventContent>>,
-    pub state_key: Option<String>
-}
-
-#[derive(Deserialize, Debug, Default)]
-pub struct RoomCanonicalAliasEventContent {
+pub struct RoomCanonicalAliasEvent {
     pub alias: String
 }
 
 #[derive(Deserialize, Debug, Default)]
-pub struct RoomCanonicalAliasEvent {
-    pub content: RoomCanonicalAliasEventContent,
-    pub origin_server_ts: Option<i64>,
-    pub sender: Option<String>,
-    pub unsigned: Option<Unsigned<RoomCanonicalAliasEventContent>>,
-    pub state_key: Option<String>
-}
-
-#[derive(Deserialize, Debug, Default)]
-pub struct RoomNameEventContent {
+pub struct RoomNameEvent {
     pub name: String
 }
 
 #[derive(Deserialize, Debug, Default)]
-pub struct RoomNameEvent {
-    pub content: RoomNameEventContent,
-    pub origin_server_ts: Option<i64>,
-    pub sender: Option<String>,
-    pub unsigned: Option<Unsigned<RoomNameEventContent>>,
-    pub state_key: Option<String>
-}
-
-#[derive(Deserialize, Debug, Default)]
-pub struct RoomTopicEventContent {
+pub struct RoomTopicEvent {
     pub topic: String
 }
 
 #[derive(Deserialize, Debug, Default)]
-pub struct RoomTopicEvent {
-    pub content: RoomTopicEventContent,
-    pub origin_server_ts: Option<i64>,
-    pub sender: Option<String>,
-    pub unsigned: Option<Unsigned<RoomTopicEventContent>>,
-    pub state_key: Option<String>
-}
-
-#[derive(Deserialize, Debug, Default)]
-pub struct TypingEventContent {
+pub struct TypingEvent {
     pub user_ids: Vec<String>
 }
 
 #[derive(Deserialize, Debug, Default)]
-pub struct TypingEvent {
-    pub content: TypingEventContent,
-    pub origin_server_ts: Option<i64>,
-    pub sender: Option<String>,
-    pub unsigned: Option<Unsigned<TypingEventContent>>,
-    pub state_key: Option<String>
-}
-
-#[derive(Deserialize, Debug, Default)]
-pub struct RoomPowerLevelsEventContent {
+pub struct RoomPowerLevelsEvent {
     pub events_default: Option<i64>,
     pub invite: Option<i64>,
     pub state_default: Option<i64>,
@@ -400,61 +335,25 @@ pub struct RoomPowerLevelsEventContent {
 }
 
 #[derive(Deserialize, Debug, Default)]
-pub struct RoomPowerLevelsEvent {
-    pub content: RoomPowerLevelsEventContent,
-    pub origin_server_ts: Option<i64>,
-    pub sender: Option<String>,
-    pub unsigned: Option<Unsigned<RoomPowerLevelsEventContent>>,
-    pub state_key: Option<String>
-}
-
-#[derive(Deserialize, Debug, Default)]
-pub struct RoomHistoryVisibilityEventContent {
+pub struct RoomHistoryVisibilityEvent {
     pub history_visibility: String
 }
 
 #[derive(Deserialize, Debug, Default)]
-pub struct RoomHistoryVisibilityEvent {
-    pub content: RoomHistoryVisibilityEventContent,
-    pub origin_server_ts: Option<i64>,
-    pub sender: Option<String>,
-    pub unsigned: Option<Unsigned<RoomHistoryVisibilityEventContent>>,
-    pub state_key: Option<String>
-}
-
-#[derive(Deserialize, Debug, Default)]
-pub struct RoomMemberEventContent {
+pub struct RoomMemberEvent {
     pub membership: String,
     pub avatar_url: Option<String>,
     pub displayname: Option<String>
 }
 
 #[derive(Deserialize, Debug, Default)]
-pub struct RoomMemberEvent {
-    pub content: RoomMemberEventContent,
-    pub origin_server_ts: Option<i64>,
-    pub sender: Option<String>,
-    pub unsigned: Option<Unsigned<RoomMemberEventContent>>,
-    pub state_key: Option<String>
-}
-
-#[derive(Deserialize, Debug, Default)]
-pub struct PresenceEventContent {
+pub struct PresenceEvent {
     pub user_id: Option<String>,
     pub presence: String,
     pub avatar_url: Option<String>,
     pub last_active_ago: Option<i64>,
     pub currently_active: Option<bool>,
     pub displayname: Option<String>
-}
-
-#[derive(Deserialize, Debug, Default)]
-pub struct PresenceEvent {
-    pub content: PresenceEventContent,
-    pub origin_server_ts: Option<i64>,
-    pub sender: Option<String>,
-    pub unsigned: Option<Unsigned<PresenceEventContent>>,
-    pub state_key: Option<String>
 }
 
 #[derive(Deserialize, Debug, Default)]
