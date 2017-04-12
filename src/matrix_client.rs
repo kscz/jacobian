@@ -1,11 +1,15 @@
 extern crate serde_json;
 extern crate reqwest;
+extern crate chrono;
 
 use std::collections::HashMap;
+use std::time::Duration;
 
 use reqwest::{Client, UrlError};
-use reqwest::header::{Headers, Authorization, Bearer};
+use reqwest::header::{Headers, Authorization, Bearer, ContentType};
 use std::io::{Read, Error};
+
+use chrono::prelude::*;
 
 #[derive(Deserialize, Debug, Default)]
 pub struct VersionResponse {
@@ -152,7 +156,7 @@ pub struct ReceiptEvent {
     pub read: HashMap<String, Receipt>
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(tag = "msgtype")]
 pub enum RoomMessageTypes {
     Unknown,
@@ -188,21 +192,21 @@ impl Default for RoomMessageTypes {
     }
 }
 
-#[derive(Deserialize, Debug, Default)]
+#[derive(Serialize, Deserialize, Debug, Default)]
 pub struct AudioInfo {
     pub mimetype: Option<String>,
     pub duration: Option<i64>,
     pub size: Option<i64>
 }
 
-#[derive(Deserialize, Debug, Default)]
+#[derive(Serialize, Deserialize, Debug, Default)]
 pub struct AudioMessageType {
     pub body: String,
     pub info: Option<AudioInfo>,
     pub url: String
 }
 
-#[derive(Deserialize, Debug, Default)]
+#[derive(Serialize, Deserialize, Debug, Default)]
 pub struct VideoInfo {
     pub mimetype: Option<String>,
     pub thumbnail_info: Option<ImageInfo>,
@@ -213,14 +217,14 @@ pub struct VideoInfo {
     pub size: Option<i64>
 }
 
-#[derive(Deserialize, Debug, Default)]
+#[derive(Serialize, Deserialize, Debug, Default)]
 pub struct VideoMessageType {
     pub body: String,
     pub info: Option<VideoInfo>,
     pub url: String
 }
 
-#[derive(Deserialize, Debug, Default)]
+#[derive(Serialize, Deserialize, Debug, Default)]
 pub struct LocationMessageType {
     pub body: String,
     pub thumbnail_info: Option<ImageInfo>,
@@ -228,13 +232,13 @@ pub struct LocationMessageType {
     pub thumbnail_url: Option<String>
 }
 
-#[derive(Deserialize, Debug, Default)]
+#[derive(Serialize, Deserialize, Debug, Default)]
 pub struct FileInfo {
     pub mimetype: Option<String>,
     pub size: Option<i64>
 }
 
-#[derive(Deserialize, Debug, Default)]
+#[derive(Serialize, Deserialize, Debug, Default)]
 pub struct FileMessageType {
     pub body: String,
     pub info: Option<FileInfo>,
@@ -244,22 +248,22 @@ pub struct FileMessageType {
     pub thumbnail_url: Option<String>
 }
 
-#[derive(Deserialize, Debug, Default)]
+#[derive(Serialize, Deserialize, Debug, Default)]
 pub struct TextMessageType {
     pub body: String
 }
 
-#[derive(Deserialize, Debug, Default)]
+#[derive(Serialize, Deserialize, Debug, Default)]
 pub struct EmoteMessageType {
     pub body: String
 }
 
-#[derive(Deserialize, Debug, Default)]
+#[derive(Serialize, Deserialize, Debug, Default)]
 pub struct NoticeMessageType {
     pub body: String
 }
 
-#[derive(Deserialize, Debug, Default)]
+#[derive(Serialize, Deserialize, Debug, Default)]
 pub struct ImageMessageType {
     pub body: String,
     pub info: Option<ImageInfo>,
@@ -280,7 +284,7 @@ pub struct RoomCreateEvent {
     pub federate: Option<bool>
 }
 
-#[derive(Deserialize, Debug, Default)]
+#[derive(Serialize, Deserialize, Debug, Default)]
 pub struct ImageInfo {
     pub mimetype: Option<String>,
     pub h: Option<i64>,
@@ -427,6 +431,11 @@ pub struct SyncResponse {
     pub presence: Presence
 }
 
+#[derive(Deserialize, Debug, Default)]
+pub struct SendEventResponse {
+    pub event_id: String
+}
+
 pub struct MatrixClient {
     access_token: Option<String>,
     refresh_token: Option<String>,
@@ -456,15 +465,22 @@ const PUBLIC_ROOM_URL: &'static str = "/_matrix/client/r0/publicRooms";
 const JOIN_ROOM_URL: &'static str = "/_matrix/client/r0/join/";
 const SYNC_URL: &'static str = "/_matrix/client/r0/sync";
 
+const SEND_ROOM_MESSAGE_PRE_ROOM_URL: &'static str = "/_matrix/client/r0/rooms/";
+const SEND_ROOM_MESSAGE_POST_ROOM_URL: &'static str = "/send/m.room.message/";
+
+const TIMEOUT_DEFAULT_MS: u64 = 10000;
+
 impl MatrixClient {
     pub fn new(homeserver: String, device_id: Option<String>) -> MatrixClient {
+        let mut http_client = reqwest::Client::new().unwrap();
+        http_client.timeout(Duration::from_millis(TIMEOUT_DEFAULT_MS));
         MatrixClient {
             access_token: None,
             refresh_token: None,
             local_device_id: device_id,
             server_device_id: None,
             user_id: None,
-            http_client: reqwest::Client::new().unwrap(),
+            http_client: http_client,
             homeserver: homeserver
         }
     }
@@ -492,7 +508,7 @@ impl MatrixClient {
         request_url.push_str(self.homeserver.as_str());
         request_url.push_str(VERSION_URL);
 
-        let mut response = self.http_client.get(request_url.as_str()).send().map_err(MatrixClientError::Http)?;;
+        let mut response = self.http_client.get(request_url.as_str()).send().map_err(MatrixClientError::Http)?;
 
         let mut body = String::new();
         response.read_to_string(&mut body).map_err(MatrixClientError::Io)?;
@@ -520,9 +536,9 @@ impl MatrixClient {
             device_id: self.local_device_id.clone()
         };
 
-        let json = serde_json::to_string(&login_request).map_err(MatrixClientError::Json)?;
-
-        let mut response = self.http_client.post(request_url.as_str()).body(json).send().map_err(MatrixClientError::Http)?;
+        let mut response = self.http_client.post(request_url.as_str())
+                                .json(&login_request)
+                                .send().map_err(MatrixClientError::Http)?;
 
         let mut body = String::new();
         response.read_to_string(&mut body).map_err(MatrixClientError::Io)?;
@@ -634,7 +650,7 @@ impl MatrixClient {
         Ok(join_response)
     }
 
-    pub fn sync(&self, filter: Option<&str>, since: Option<&str>, full_state: Option<bool>, timeout: i64) -> Result<(), MatrixClientError> {
+    pub fn sync(&mut self, filter: Option<&str>, since: Option<&String>, full_state: Option<bool>, timeout_ms: Option<u64>) -> Result<SyncResponse, MatrixClientError> {
         let mut request_url = {
             let mut base_url = String::with_capacity(self.homeserver.len() + SYNC_URL.len());
             base_url.push_str(self.homeserver.as_str());
@@ -663,12 +679,17 @@ impl MatrixClient {
             }
         };
 
+        match timeout_ms {
+            None => (),
+            Some(timeout_ms) => {
+                self.http_client.timeout(Duration::from_millis(timeout_ms + TIMEOUT_DEFAULT_MS));
+                request_url.query_pairs_mut().append_pair("timeout", format!("{}", timeout_ms).as_str());
+            }
+        };
+
         let headers = self.get_authorization_headers()?;
 
         let request = self.http_client.get(request_url).headers(headers);
-
-        // FIXME: figure out how to set per-request timeouts
-        //request.set_read_timeout(timeout).map_err(MatrixClientError::Http)?;
 
         let mut response = request.send().map_err(MatrixClientError::Http)?;
 
@@ -679,21 +700,45 @@ impl MatrixClient {
             return Err(MatrixClientError::BadStatus(format!("Got error response from the server: {}; Contents: {}", response.status(), body)));
         }
 
-        let sync_response: Option<SyncResponse> = match serde_json::from_str(&body) {
-            Ok(x) => Some(x),
-            Err(e) => {
-                println!("Failed to deserialize! {:#?}", e);
-                println!("{}", body);
-                None
-            }
-        };
+        let sync_response: SyncResponse = serde_json::from_str(&body).map_err(MatrixClientError::Json)?;
 
-        match sync_response {
-            Some(x) => println!("Got a sync response! {:#?}", x),
-            _ => ()
-        };
+        Ok(sync_response)
+    }
 
-        Ok(())
+    pub fn send_room_message(&mut self, room: &str, message: &RoomMessageTypes) -> Result<SendEventResponse, MatrixClientError> {
+        let mut request_url = reqwest::Url::parse(self.homeserver.as_str()).map_err(MatrixClientError::UrlError)?;
+
+
+        let mut url_path = String::with_capacity(SEND_ROOM_MESSAGE_PRE_ROOM_URL.len() + SEND_ROOM_MESSAGE_POST_ROOM_URL.len() + room.len());
+        url_path.push_str(SEND_ROOM_MESSAGE_PRE_ROOM_URL);
+        url_path.push_str(room);
+        url_path.push_str(SEND_ROOM_MESSAGE_POST_ROOM_URL);
+
+        let now = UTC::now();
+        url_path.push_str(now.format("%s.%.3f").to_string().as_str());
+        let url_path = url_path.replace(":", "%3A");
+        request_url.set_path(url_path.as_str());
+
+        println!("Request URL: {:?}", request_url);
+
+        let headers = self.get_authorization_headers()?;
+
+        let request = self.http_client.put(request_url).json(message).headers(headers);
+
+        println!("Attempting to post: {:?}", request);
+
+        let mut response = request.send().map_err(MatrixClientError::Http)?;
+
+        let mut body = String::new();
+        response.read_to_string(&mut body).map_err(MatrixClientError::Io)?;
+
+        if reqwest::StatusCode::Ok != *response.status() {
+            return Err(MatrixClientError::BadStatus(format!("Got error response from the server: {}; Contents: {}", response.status(), body)));
+        }
+
+        let send_event_response: SendEventResponse = serde_json::from_str(&body).map_err(MatrixClientError::Json)?;
+
+        return Ok(send_event_response);
     }
 }
 
