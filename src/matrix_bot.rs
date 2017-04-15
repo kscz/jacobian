@@ -8,11 +8,11 @@ pub struct MatrixBot {
 }
 
 impl MatrixBot {
-    pub fn new(homeserver: String, username: String, password: String) -> MatrixBot {
+    pub fn new(homeserver: &str, username: &str, password: &str) -> MatrixBot {
         MatrixBot {
             matrix_client: MatrixClient::new(homeserver, None),
-            username: username,
-            password: password,
+            username: String::from(username),
+            password: String::from(password),
             should_quit: false
         }
     }

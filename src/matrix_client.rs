@@ -471,7 +471,7 @@ const SEND_ROOM_MESSAGE_POST_ROOM_URL: &'static str = "/send/m.room.message/";
 const TIMEOUT_DEFAULT_MS: u64 = 10000;
 
 impl MatrixClient {
-    pub fn new(homeserver: String, device_id: Option<String>) -> MatrixClient {
+    pub fn new(homeserver: &str, device_id: Option<String>) -> MatrixClient {
         let mut http_client = reqwest::Client::new().unwrap();
         http_client.timeout(Duration::from_millis(TIMEOUT_DEFAULT_MS));
         MatrixClient {
@@ -481,7 +481,7 @@ impl MatrixClient {
             server_device_id: None,
             user_id: None,
             http_client: http_client,
-            homeserver: homeserver
+            homeserver: String::from(homeserver)
         }
     }
 
