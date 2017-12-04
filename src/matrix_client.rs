@@ -5,9 +5,8 @@ extern crate chrono;
 use std::collections::HashMap;
 use std::time::Duration;
 
-use reqwest::{Client, UrlError};
-use reqwest::header::{Headers, Authorization, Bearer, ContentType};
-use std::io::{Read, Error};
+use reqwest::header::{Headers, Authorization, Bearer};
+use std::io::{Read};
 
 use chrono::prelude::*;
 
@@ -79,7 +78,9 @@ pub struct UnreadNotificationCounts {
 pub struct Unsigned<T> {
     pub prev_content: Option<T>,
     pub age: i64,
-    pub transaction_id: Option<String>
+    pub transaction_id: Option<String>,
+    pub redacted_by: Option<String>,
+    pub redacted_because: Option<Box<EventContainer<RoomRedactionEvent>>>
 }
 
 #[derive(Deserialize, Debug)]
@@ -124,10 +125,37 @@ pub enum Event {
     RoomJoinRules(EventContainer<RoomJoinRulesEvent>),
 
     #[serde(rename = "m.room.message")]
-    RoomMessage(EventContainer<RoomMessageTypes>),
+    RoomMessage(EventContainer<RoomMessageOptionType>),
 
     #[serde(rename = "m.room.name")]
     RoomName(EventContainer<RoomNameEvent>),
+
+    #[serde(rename = "m.room.guest_access")]
+    RoomGuestAccess(EventContainer<GuestAccessEvent>),
+
+    #[serde(rename = "m.room.redaction")]
+    RoomRedaction(EventContainer<RoomRedactionEvent>),
+}
+
+#[derive(Deserialize, Debug)]
+pub struct RoomRedactionEvent {
+    pub reason: Option<String>
+}
+
+#[derive(Deserialize, Debug)]
+pub struct GuestAccessEvent {
+    pub guest_access: GuestAccess
+}
+
+#[derive(Deserialize, Debug)]
+pub enum GuestAccess {
+    Unknown,
+
+    #[serde(rename = "can_join")]
+    CanJoin,
+
+    #[serde(rename = "forbidden")]
+    Forbidden,
 }
 
 impl Default for Event {
@@ -154,6 +182,17 @@ pub struct Receipt {
 pub struct ReceiptEvent {
     #[serde(rename = "m.read")]
     pub read: HashMap<String, Receipt>
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct RedactedMessageContent {
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(untagged)]
+pub enum RoomMessageOptionType {
+    Message(RoomMessageTypes),
+    Redacted(RedactedMessageContent)
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -472,8 +511,7 @@ const TIMEOUT_DEFAULT_MS: u64 = 10000;
 
 impl MatrixClient {
     pub fn new(homeserver: &str, device_id: Option<String>) -> MatrixClient {
-        let mut http_client = reqwest::Client::new().unwrap();
-        http_client.timeout(Duration::from_millis(TIMEOUT_DEFAULT_MS));
+        let http_client = reqwest::Client::new();
         MatrixClient {
             access_token: None,
             refresh_token: None,
@@ -513,7 +551,7 @@ impl MatrixClient {
         let mut body = String::new();
         response.read_to_string(&mut body).map_err(MatrixClientError::Io)?;
 
-        if reqwest::StatusCode::Ok != *response.status() {
+        if reqwest::StatusCode::Ok != response.status() {
             return Err(MatrixClientError::BadStatus(format!("Got error response from the server: {}; Contents: {}", response.status(), body)));
         }
 
@@ -543,7 +581,7 @@ impl MatrixClient {
         let mut body = String::new();
         response.read_to_string(&mut body).map_err(MatrixClientError::Io)?;
 
-        if reqwest::StatusCode::Ok != *response.status() {
+        if reqwest::StatusCode::Ok != response.status() {
             return Err(MatrixClientError::BadStatus(format!("Got error response from the server: {}; Contents: {}", response.status(), body)));
         }
 
@@ -569,7 +607,7 @@ impl MatrixClient {
         let mut body = String::new();
         response.read_to_string(&mut body).map_err(MatrixClientError::Io)?;
 
-        if reqwest::StatusCode::Ok != *response.status() {
+        if reqwest::StatusCode::Ok != response.status() {
             return Err(MatrixClientError::BadStatus(format!("Got error response from the server: {}; Contents: {}", response.status(), body)));
         }
 
@@ -592,7 +630,7 @@ impl MatrixClient {
         let mut body = String::new();
         response.read_to_string(&mut body).map_err(MatrixClientError::Io)?;
 
-        if reqwest::StatusCode::Ok != *response.status() {
+        if reqwest::StatusCode::Ok != response.status() {
             return Err(MatrixClientError::BadStatus(format!("Got error response from the server: {}; Contents: {}", response.status(), body)));
         }
 
@@ -615,7 +653,7 @@ impl MatrixClient {
         let mut body = String::new();
         response.read_to_string(&mut body).map_err(MatrixClientError::Io)?;
 
-        if reqwest::StatusCode::Ok != *response.status() {
+        if reqwest::StatusCode::Ok != response.status() {
             return Err(MatrixClientError::BadStatus(format!("Got error response from the server: {}; Contents: {}", response.status(), body)));
         }
 
@@ -641,7 +679,7 @@ impl MatrixClient {
         let mut body = String::new();
         response.read_to_string(&mut body).map_err(MatrixClientError::Io)?;
 
-        if reqwest::StatusCode::Ok != *response.status() {
+        if reqwest::StatusCode::Ok != response.status() {
             return Err(MatrixClientError::BadStatus(format!("Got error response from the server: {}; Contents: {}", response.status(), body)));
         }
 
@@ -679,24 +717,22 @@ impl MatrixClient {
             }
         };
 
-        match timeout_ms {
-            None => (),
+        let timeout = match timeout_ms {
+            None => Duration::from_millis(TIMEOUT_DEFAULT_MS),
             Some(timeout_ms) => {
-                self.http_client.timeout(Duration::from_millis(timeout_ms + TIMEOUT_DEFAULT_MS));
                 request_url.query_pairs_mut().append_pair("timeout", format!("{}", timeout_ms).as_str());
+                Duration::from_millis(timeout_ms + TIMEOUT_DEFAULT_MS)
             }
         };
 
         let headers = self.get_authorization_headers()?;
 
-        let request = self.http_client.get(request_url).headers(headers);
-
-        let mut response = request.send().map_err(MatrixClientError::Http)?;
+        let mut response = self.http_client.get(request_url).headers(headers).send().map_err(MatrixClientError::Http)?; //.timeout(timeout);
 
         let mut body = String::new();
         response.read_to_string(&mut body).map_err(MatrixClientError::Io)?;
 
-        if reqwest::StatusCode::Ok != *response.status() {
+        if reqwest::StatusCode::Ok != response.status() {
             return Err(MatrixClientError::BadStatus(format!("Got error response from the server: {}; Contents: {}", response.status(), body)));
         }
 
@@ -714,7 +750,7 @@ impl MatrixClient {
         url_path.push_str(room);
         url_path.push_str(SEND_ROOM_MESSAGE_POST_ROOM_URL);
 
-        let now = UTC::now();
+        let now = Utc::now();
         url_path.push_str(now.format("%s.%.3f").to_string().as_str());
         let url_path = url_path.replace(":", "%3A");
         request_url.set_path(url_path.as_str());
@@ -723,16 +759,12 @@ impl MatrixClient {
 
         let headers = self.get_authorization_headers()?;
 
-        let request = self.http_client.put(request_url).json(message).headers(headers);
-
-        println!("Attempting to post: {:?}", request);
-
-        let mut response = request.send().map_err(MatrixClientError::Http)?;
+        let mut response = self.http_client.put(request_url).json(message).headers(headers).send().map_err(MatrixClientError::Http)?;
 
         let mut body = String::new();
         response.read_to_string(&mut body).map_err(MatrixClientError::Io)?;
 
-        if reqwest::StatusCode::Ok != *response.status() {
+        if reqwest::StatusCode::Ok != response.status() {
             return Err(MatrixClientError::BadStatus(format!("Got error response from the server: {}; Contents: {}", response.status(), body)));
         }
 

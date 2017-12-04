@@ -93,7 +93,7 @@ impl MatrixBot {
             };
 
             match room_msg.content {
-                RoomMessageTypes::TextMessage(ref txt) => {
+                RoomMessageOptionType::Message(RoomMessageTypes::TextMessage(ref txt)) => {
                     let body: &str = txt.body.as_ref();
                     if body.starts_with(format!("{}: ", self.username).as_str()) == true {
                         self.process_command(room_name, room_msg.sender.as_ref(), body);
