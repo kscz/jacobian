@@ -4,10 +4,10 @@ version = "0.1.0"
 authors = ["Kit Sczudlo <kit@kitscz.com>"]
 
 [dependencies]
-serde = "1.0.21"
-serde_derive = "1.0.21"
-serde_json = "1.0.6"
-reqwest = "0.8.1"
-chrono = "0.4.0"
-clap = "2.28.0"
+serde = "1.0.87"
+serde_derive = "1.0.87"
+serde_json = "1.0.38"
+reqwest = "0.9.9"
+chrono = "0.4.6"
+clap = "2.32.0"
 

@@ -4,8 +4,6 @@ extern crate chrono;
 
 use std::collections::HashMap;
 use std::time::Duration;
-
-use reqwest::header::{Headers, Authorization, Bearer};
 use std::io::{Read};
 
 use chrono::prelude::*;
@@ -523,22 +521,13 @@ impl MatrixClient {
         }
     }
 
-    fn get_authorization_headers(&self) -> Result<Headers, MatrixClientError> {
+    fn get_access_token(&self) -> Result<String, MatrixClientError> {
         let access_token = match self.access_token {
             Some(ref x) => x.clone(),
             None => { return Err(MatrixClientError::NotLoggedIn); }
         };
 
-        let mut headers = Headers::new();
-        headers.set(
-                Authorization(
-                    Bearer {
-                        token: access_token
-                    }
-                )
-            );
-
-        Ok(headers)
+        Ok(access_token)
     }
 
     pub fn get_supported_versions(&self) -> Result<VersionResponse, MatrixClientError> {
@@ -551,7 +540,7 @@ impl MatrixClient {
         let mut body = String::new();
         response.read_to_string(&mut body).map_err(MatrixClientError::Io)?;
 
-        if reqwest::StatusCode::Ok != response.status() {
+        if reqwest::StatusCode::OK != response.status() {
             return Err(MatrixClientError::BadStatus(format!("Got error response from the server: {}; Contents: {}", response.status(), body)));
         }
 
@@ -581,7 +570,7 @@ impl MatrixClient {
         let mut body = String::new();
         response.read_to_string(&mut body).map_err(MatrixClientError::Io)?;
 
-        if reqwest::StatusCode::Ok != response.status() {
+        if reqwest::StatusCode::OK != response.status() {
             return Err(MatrixClientError::BadStatus(format!("Got error response from the server: {}; Contents: {}", response.status(), body)));
         }
 
@@ -600,14 +589,14 @@ impl MatrixClient {
         request_url.push_str(self.homeserver.as_str());
         request_url.push_str(LOGOUT_URL);
 
-        let headers = self.get_authorization_headers()?;
+        let access_token = self.get_access_token()?;
 
-        let mut response = self.http_client.post(request_url.as_str()).headers(headers).send().map_err(MatrixClientError::Http)?;
+        let mut response = self.http_client.post(request_url.as_str()).bearer_auth(access_token).send().map_err(MatrixClientError::Http)?;
 
         let mut body = String::new();
         response.read_to_string(&mut body).map_err(MatrixClientError::Io)?;
 
-        if reqwest::StatusCode::Ok != response.status() {
+        if reqwest::StatusCode::OK != response.status() {
             return Err(MatrixClientError::BadStatus(format!("Got error response from the server: {}; Contents: {}", response.status(), body)));
         }
 
@@ -623,14 +612,14 @@ impl MatrixClient {
         request_url.push_str(self.homeserver.as_str());
         request_url.push_str(LOGOUT_ALL_URL);
 
-        let headers = self.get_authorization_headers()?;
+        let access_token = self.get_access_token()?;
 
-        let mut response = self.http_client.post(request_url.as_str()).headers(headers).send().map_err(MatrixClientError::Http)?;
+        let mut response = self.http_client.post(request_url.as_str()).bearer_auth(access_token).send().map_err(MatrixClientError::Http)?;
 
         let mut body = String::new();
         response.read_to_string(&mut body).map_err(MatrixClientError::Io)?;
 
-        if reqwest::StatusCode::Ok != response.status() {
+        if reqwest::StatusCode::OK != response.status() {
             return Err(MatrixClientError::BadStatus(format!("Got error response from the server: {}; Contents: {}", response.status(), body)));
         }
 
@@ -646,14 +635,14 @@ impl MatrixClient {
         request_url.push_str(self.homeserver.as_str());
         request_url.push_str(PUBLIC_ROOM_URL);
 
-        let headers = self.get_authorization_headers()?;
+        let access_token= self.get_access_token()?;
 
-        let mut response = self.http_client.get(request_url.as_str()).headers(headers).send().map_err(MatrixClientError::Http)?;
+        let mut response = self.http_client.get(request_url.as_str()).bearer_auth(access_token).send().map_err(MatrixClientError::Http)?;
 
         let mut body = String::new();
         response.read_to_string(&mut body).map_err(MatrixClientError::Io)?;
 
-        if reqwest::StatusCode::Ok != response.status() {
+        if reqwest::StatusCode::OK != response.status() {
             return Err(MatrixClientError::BadStatus(format!("Got error response from the server: {}; Contents: {}", response.status(), body)));
         }
 
@@ -672,14 +661,14 @@ impl MatrixClient {
         request_url.push_str(JOIN_ROOM_URL);
         request_url.push_str(room_id_or_alias.as_str());
 
-        let headers = self.get_authorization_headers()?;
+        let access_token = self.get_access_token()?;
 
-        let mut response = self.http_client.post(request_url.as_str()).headers(headers).send().map_err(MatrixClientError::Http)?;
+        let mut response = self.http_client.post(request_url.as_str()).bearer_auth(access_token).send().map_err(MatrixClientError::Http)?;
 
         let mut body = String::new();
         response.read_to_string(&mut body).map_err(MatrixClientError::Io)?;
 
-        if reqwest::StatusCode::Ok != response.status() {
+        if reqwest::StatusCode::OK != response.status() {
             return Err(MatrixClientError::BadStatus(format!("Got error response from the server: {}; Contents: {}", response.status(), body)));
         }
 
@@ -725,14 +714,14 @@ impl MatrixClient {
             }
         };
 
-        let headers = self.get_authorization_headers()?;
+        let access_token = self.get_access_token()?;
 
-        let mut response = self.http_client.get(request_url).headers(headers).send().map_err(MatrixClientError::Http)?; //.timeout(timeout);
+        let mut response = self.http_client.get(request_url).bearer_auth(access_token).send().map_err(MatrixClientError::Http)?; //.timeout(timeout);
 
         let mut body = String::new();
         response.read_to_string(&mut body).map_err(MatrixClientError::Io)?;
 
-        if reqwest::StatusCode::Ok != response.status() {
+        if reqwest::StatusCode::OK != response.status() {
             return Err(MatrixClientError::BadStatus(format!("Got error response from the server: {}; Contents: {}", response.status(), body)));
         }
 
@@ -757,14 +746,14 @@ impl MatrixClient {
 
         println!("Request URL: {:?}", request_url);
 
-        let headers = self.get_authorization_headers()?;
+        let access_token = self.get_access_token()?;
 
-        let mut response = self.http_client.put(request_url).json(message).headers(headers).send().map_err(MatrixClientError::Http)?;
+        let mut response = self.http_client.put(request_url).json(message).bearer_auth(access_token).send().map_err(MatrixClientError::Http)?;
 
         let mut body = String::new();
         response.read_to_string(&mut body).map_err(MatrixClientError::Io)?;
 
-        if reqwest::StatusCode::Ok != response.status() {
+        if reqwest::StatusCode::OK != response.status() {
             return Err(MatrixClientError::BadStatus(format!("Got error response from the server: {}; Contents: {}", response.status(), body)));
         }
 
